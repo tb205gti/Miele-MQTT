@@ -559,7 +559,7 @@ function retrieveandpublish($folder,$mqtt) {
 				$waterconsumption=$appliance['state']['ecoFeedback']['currentWaterConsumption']['value'];
                                 $powerconsumption=$appliance['state']['ecoFeedback']['currentEnergyConsumption']['value'];
 				
-								$topicapplbase = $topicbase . $appliance_id . '/';
+				$topicapplbase = $topicbase . $appliance_id . '/';
 				$mqtt->publish($topicapplbase . "ApplianceType", $appliance_type);
 				$mqtt->publish($topicapplbase . "ProgramName", $programName);
 				$mqtt->publish($topicapplbase . "ProgramStatus", $programStatus);
