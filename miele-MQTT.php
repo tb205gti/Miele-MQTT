@@ -123,6 +123,7 @@ function createconfig($refresh=false) {
 	global $mosquitto_host;
 	global $mosquitto_user;
 	global $mosquitto_pass;
+	global $mosquitto_port;
 	global $topicbase;
 	global $access_token;
 	global $create;
