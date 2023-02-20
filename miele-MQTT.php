@@ -146,6 +146,7 @@ function createconfig($refresh=false) {
 			'mosquitto_host'=> 'localhost',
 			'mosquitto_user'=> '',
 			'mosquitto_pass'=> '',
+			'mosquitto_port'=> '',
 			'topicbase'=> '/miele/'
 		);
 		if(file_exists($folder . '/miele-config2.php')){
@@ -169,6 +170,10 @@ function createconfig($refresh=false) {
 
 		$mosquitto_host=readline("Type the name of your mosquitto host [" . $config["mosquitto_host"] . "]: ");
 		if($mosquitto_host == "") {$mosquitto_host=$config["mosquitto_host"];}
+		
+		$mosquitto_port=readline("Type the port of your mosquitto host [" . $config["mosquitto_port"] . "]: ");
+		if($mosquitto_port == "") {$mosquitto_port=$config["mosquitto_port"];}
+		
 		$mosquitto_user=readline("Type login-name for Mosquitto [" . $config["mosquitto_user"] . "]: ");
 		if($mosquitto_user == "") {$mosquitto_user=$config["mosquitto_user"];}
 		if (strlen($mosquitto_user) >> 0 ) {
@@ -220,6 +225,7 @@ function createconfig($refresh=false) {
 		$mosquitto_host=$config['mosquitto_host'];
 		$mosquitto_user=$config['mosquitto_user'];
 		$mosquitto_pass=$config['mosquitto_pass'];
+		$mosquitto_port=$config['mosquitto_port'];
 		$topicbase=$config['topicbase'];
 		$country=$config['country'];
 	}
@@ -261,6 +267,7 @@ function createconfig($refresh=false) {
 		$config = $config . "	'mosquitto_host'=> '" . $mosquitto_host . "'," . PHP_EOL;
 		$config = $config . "	'mosquitto_user'=> '" . $mosquitto_user . "'," . PHP_EOL;
 		$config = $config . "	'mosquitto_pass'=> '" . $mosquitto_pass . "'," . PHP_EOL;
+		$config = $config . "	'mosquitto_port'=> '" . $mosquitto_port . "'," . PHP_EOL;
 		$config = $config . "	'topicbase'=> '" . $topicbase . "'" . PHP_EOL;
 		$config = $config . ");" . PHP_EOL . "?>" . PHP_EOL . PHP_EOL;
 
@@ -326,6 +333,7 @@ function refreshtoken() {
 		$newconfig = $newconfig . "	'mosquitto_host'=> '" . $config['mosquitto_host'] . "'," . PHP_EOL;
 		$newconfig = $newconfig . "	'mosquitto_user'=> '" . $config['mosquitto_user'] . "'," . PHP_EOL;
 		$newconfig = $newconfig . "	'mosquitto_pass'=> '" . $config['mosquitto_pass'] . "'," . PHP_EOL;
+		$newconfig = $newconfig . "	'mosquitto_port'=> '" . $config['mosquitto_port'] . "'," . PHP_EOL;
 		$newconfig = $newconfig . "	'topicbase'=> '" . $config['topicbase'] . "'" . PHP_EOL;
 		$newconfig = $newconfig . ");" . PHP_EOL . "?>" . PHP_EOL . PHP_EOL;
 
@@ -476,6 +484,7 @@ function retrieveandpublish($folder,$mqtt) {
 	global $mosquitto_host;
 	global $mosquitto_user;
 	global $mosquitto_pass;
+	global $mosquitto_port;
 	global $access_token;
 	global $topicbase;
 	global $dump;
