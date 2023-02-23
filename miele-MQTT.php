@@ -3,7 +3,8 @@
 ######
 ######		Miele-MQTT.php
 ######		Script by Ole Kristian Lona, to read data from Miele@home, and transfer through MQTT.
-######		Version 3.1b02
+######		Script adjusted by Peter Wiwel, passing on json object with some crude value sanatation for OpenHab
+######		Version 3.2
 ######
 ################################################################################################################################################
 
@@ -20,6 +21,8 @@ $topicbase='';
 $access_token='';
 $config='';
 $country='';
+$delay=60;
+$version="3.2";
 
 ################################################################################################################################################
 ######		getRESTData - Function used to retrieve REST data from server.
@@ -43,19 +46,19 @@ function getRESTData($url,$postdata,$method,$content,$authorization='')
 		print "Method: " . $method . PHP_EOL;
 		print "URL: " . $url . PHP_EOL;
 	}
-	$ch = curl_init($url);                                                                      
-	curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);                                                                     
+	$ch = curl_init($url);
+	curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
 	curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 	$headers=array();
+
 	if(strlen($authorization)>> 0 ) {
 		array_push($headers, 'Authorization: ' . $authorization);
 	}
-	
 	if(strlen($content) >> 0 ) {
 		array_push($headers, 'Content-Type: ' . $content);
 	}
-	
-	
+
+
 	curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
 	if (( strcmp($method,"POST" ) == 0 ) || ( strcmp($method,"PUT" ) == 0 )) {
 		curl_setopt($ch,CURLOPT_POSTFIELDS, $postdata);
@@ -75,7 +78,7 @@ function getRESTData($url,$postdata,$method,$content,$authorization='')
 		}		
 	}
 	else {
-		$returndata=json_decode($result,true);
+		$returndata=json_decode($result,true, JSON_UNESCAPED_UNICODE);
 	}
 	
  return $returndata;
@@ -186,7 +189,7 @@ function createconfig($refresh=false) {
 		$topicbase=readline('Type the base topic name to use for Mosquitto [' . $config["topicbase"] . ']: ');
 		if($topicbase == "") {$topicbase=$config["topicbase"];}
 		if (strlen($topicbase) == 0) {
-			$topicbase="/miele/";
+			$topicbase="miele/";
 		}
 		if (substr($topicbase,-1) <> "/") {
 			$topicbase = $topicbase . "/";
@@ -229,7 +232,6 @@ function createconfig($refresh=false) {
 		$topicbase=$config['topicbase'];
 		$country=$config['country'];
 	}
-
 
 	if (strlen($code) >> 0 ) {
 		$url='https://api.mcs3.miele.com/thirdparty/token?client_id=' . urlencode($client_id) . '&client_secret=' . $client_secret . '&code=' . $code . '&redirect_uri=%2Fv1%2Fdevices&grant_type=authorization_code&state=token';
@@ -438,9 +440,12 @@ if($single) {
 $topics[$topicbase . 'command/#'] = array("qos" => 0, "function" => "procmsg");
 $mqtt->subscribe($topics, 0);
 
-$count=30;
+
+print "Starting MIeleMQTT version: " . $version . PHP_EOL;
+
+$count=$delay;
 while($mqtt->proc()){
-	if ( $count==30) {
+	if ( $count==$delay) {
 		checktokenrefresh();
 		retrieveandpublish($folder,$mqtt);
 		$count=0;
@@ -448,7 +453,7 @@ while($mqtt->proc()){
 	sleep(1);
 	$count = $count + 1;
 }
-		
+
 
 $mqtt->close();
 
@@ -495,6 +500,10 @@ function retrieveandpublish($folder,$mqtt) {
 
 	$authorization='';
 
+#TESTING
+
+#echo strlen($access_token) . PHP_EOL;
+
 	if (strlen($access_token) >> 0 ) {
 		$url='https://api.mcs3.miele.com/v1/devices?language=';
 		$url .= !empty($country) ? substr($country, 0,2) : "en"; 
@@ -524,115 +533,70 @@ function retrieveandpublish($folder,$mqtt) {
 	if (($dump == false) & ($json == false)) {
 		foreach ($data as $appliance) {
 			If ($programStatusRaw=$appliance['state']['status']['value_raw'] != 255){
+
 				$appliance_id=$appliance['ident']['deviceIdentLabel']['fabNumber'];
-				$appliance_type=$appliance['ident']['type']['value_localized'];
-				$programName=$appliance['state']['ProgramID']['value_localized'];
-				$programStatus=$appliance['state']['status']['value_localized'];
-				$programType=$appliance['state']['programType']['value_raw'];
-				$programPhaseStr=$appliance['state']['programPhase']['value_localized'];
-				$starttime=sprintf("%'.02d:%'.02d",$appliance['state']['startTime'][0],$appliance['state']['startTime'][1]);
+				$topicapplbase = $topicbase . $appliance_id . '/';
+
+
+                                if ($appliance['state']['startTime'][0] != "0" && $appliance['state']['startTime'][1] != "0"){
+                                  $starttime = date("Y-m-d") . "T" . sprintf("%'.02d:%'.02d",$appliance['state']['startTime'][0],$appliance['state']['startTime'][1]) . ":00";
+				  $appliance['state']['startTime'][0] = $starttime;
+                                }
+
+
 				$timeleft=sprintf("%'.02d:%'.02d",$appliance['state']['remainingTime'][0],$appliance['state']['remainingTime'][1]);
+				$appliance['state']['remainingTime'][0] = $timeleft;
+
+
 				if ( isset($appliance['state']['elapsedTime'][0])) {
 					$timerunning=sprintf("%'.02d:%'.02d",$appliance['state']['elapsedTime'][0],$appliance['state']['elapsedTime'][1]);
-				} else {
-					$timerunning="";
+					$appliance['state']['elapsedTime'][0] = $timerunning;
 				}
-				$light_on=$appliance['state']['light'];
-				$dryingstep=$appliance['state']['dryingStep']['value_localized'];
-				$ventilationstep=$appliance['state']['ventilationStep']['value_localized'];
-				$targetTemperature1 = $appliance['state']['targetTemperature'][0]['value_localized'];
-				if (isset($appliance['state']['targetTemperature'][1])) {
-					$targetTemperature2 = $appliance['state']['targetTemperature'][1]['value_localized'];
-				} else {
-						$targetTemperature2 = "";
+
+
+				if (! isset($appliance['state']['targetTemperature'][0]['value_localized'])){
+					$appliance['state']['targetTemperature'][0]['value_localized'] = "0";
 				}
-				if (isset($appliance['state']['targetTemperature'][2])) {
-					$targetTemperature3 = $appliance['state']['targetTemperature'][2]['value_localized'];
-				} else {
-						$targetTemperature3 = "";
+				if (! isset($appliance['state']['targetTemperature'][1]['value_localized'])){
+					$appliance['state']['targetTemperature'][1]['value_localized'] = "0";
 				}
-				$currentTemperature1 = $appliance['state']['temperature'][0]['value_localized'];
-				$currentTemperature2 = $appliance['state']['temperature'][1]['value_localized'];
-				$currentTemperature3 = $appliance['state']['temperature'][2]['value_localized'];
-				$signalInfo = $appliance['state']['signalInfo'];
-				$signalFailure = $appliance['state']['signalFailure'];
-				$signalDoor = $appliance['state']['signalDoor'];
-				$fullRemoteControl=$appliance['state']['remoteEnable']['fullRemoteControl'];
-				$smartGrid=$appliance['state']['remoteEnable']['smartGrid'];
-				$mobileStart=$appliance['state']['remoteEnable']['mobileStart'];
-				$ambientLight=$appliance['state']['ambientLight'];
-				$light=$appliance['state']['light'];
-				$spinningSpeed=$appliance['state']['spinningSpeed']['value_localized'];
-				$ecoFeedback=$appliance['state']['ecoFeedback'];
-				$batteryLevel=$appliance['state']['batteryLevel'];
-				$waterconsumption=$appliance['state']['ecoFeedback']['currentWaterConsumption']['value'];
-                                $powerconsumption=$appliance['state']['ecoFeedback']['currentEnergyConsumption']['value'];
-				
-				$topicapplbase = $topicbase . $appliance_id . '/';
-				$mqtt->publish($topicapplbase . "ApplianceType", $appliance_type);
-				$mqtt->publish($topicapplbase . "ProgramName", $programName);
-				$mqtt->publish($topicapplbase . "ProgramStatus", $programStatus);
-				$mqtt->publish($topicapplbase . "ProgramType", $programType);
-				$mqtt->publish($topicapplbase . "ProgramPhase", $programPhaseStr);
-				$mqtt->publish($topicapplbase . "StartTime", $starttime);
-				$mqtt->publish($topicapplbase . "TimeLeft", $timeleft);
-				$mqtt->publish($topicapplbase . "TimeRunning", $timerunning);
-				$mqtt->publish($topicapplbase . "LightON", $light_on);
-				$mqtt->publish($topicapplbase . "DryingStep", $dryingstep);
-				$mqtt->publish($topicapplbase . "VentilationStep", $ventilationstep);
-				$mqtt->publish($topicapplbase . "TargetTemperature1", $targetTemperature1);
-				$mqtt->publish($topicapplbase . "TargetTemperature2", $targetTemperature2);
-				$mqtt->publish($topicapplbase . "TargetTemperature3", $targetTemperature3);
-				$mqtt->publish($topicapplbase . "CurrentTemperature1", $currentTemperature1);
-				$mqtt->publish($topicapplbase . "CurrentTemperature2", $currentTemperature2);
-				$mqtt->publish($topicapplbase . "CurrentTemperature3", $currentTemperature3);
-				$mqtt->publish($topicapplbase . "InfoAvailable", $signalInfo);
-				$mqtt->publish($topicapplbase . "FailureSignal", $signalFailure);
-				$mqtt->publish($topicapplbase . "DoorSignal", $signalDoor);
-				$mqtt->publish($topicapplbase . "RemoteControlEnabled", $fullRemoteControl);
-				$mqtt->publish($topicapplbase . "SmartGridEnabled", $smartGrid);
-				$mqtt->publish($topicapplbase . "MobileStartEnabled", $mobileStart);
-				$mqtt->publish($topicapplbase . "AmbientLightEnabled", $ambientLight);
-				$mqtt->publish($topicapplbase . "LightEnabled", $light);
-				$mqtt->publish($topicapplbase . "SpinningSpeed", $spinningSpeed);
-				$mqtt->publish($topicapplbase . "EcoFeedbackEnabled", $ecoFeedback);
-				$mqtt->publish($topicapplbase . "BatteryLevel", $batteryLevel);
-                                $mqtt->publish($topicapplbase . "WaterConsumption", $waterconsumption);
-                                $mqtt->publish($topicapplbase . "PowerConsumption", $powerconsumption);
+				if (! isset($appliance['state']['targetTemperature'][2]['value_localized'])){
+					$appliance['state']['targetTemperature'][1]['value_localized'] = "0";
+				}
+
+
+				if (!isset($appliance['state']['temperature'][0]['value_localized'])){
+					$appliance['state']['temperature'][0]['value_localized'] = "0";
+				}
+				if (!isset($appliance['state']['temperature'][1]['value_localized'])){
+					$appliance['state']['temperature'][1]['value_localized'] = "0";
+				}
+				if (!isset($appliance['state']['temperature'][2]['value_localized'])){
+					$appliance['state']['temperature'][2]['value_localized'] = "0";
+				}
+
+
+
+				if (! isset($appliance['state']['spinningSpeed']['value_localized'])){
+					$appliance['state']['spinningSpeed']['value_localized'] = "0";
+				}
+
+				if (! isset($appliance['state']['ecoFeedback']['currentWaterConsumption']['value'])){
+					$appliance['state']['ecoFeedback']['currentWaterConsumption']['value'] = "0";
+				}
+
+                                if (!isset($appliance['state']['ecoFeedback']['currentEnergyConsumption']['value'])){
+					$appliance['state']['ecoFeedback']['currentEnergyConsumption']['value'] = "0";
+				}
+
+
+				$tosend=json_encode($appliance, JSON_UNESCAPED_UNICODE );
+                                $mqtt->publish($topicapplbase . "json", $tosend);
 
 				if($debug){
-					print "Appliance type: " . $appliance_type . PHP_EOL;
-					print "Program Name: " . $programName . PHP_EOL;
-					print "Program status: " . $programStatus . PHP_EOL;
-					print "Program type: " . $programType . PHP_EOL;
-					print "Program phase: " . $programPhaseStr . PHP_EOL;
-					print "Start Time: " . $starttime . PHP_EOL;
-					print "Time left: " . $timeleft . PHP_EOL;
-					print "Time elapsed: " . $timerunning . PHP_EOL;
-					print "Light On: " . $light_on . PHP_EOL;
-					print "DryingStep: " . $dryingstep . PHP_EOL;
-					print "Ventilationstep: " . $ventilationstep . PHP_EOL . PHP_EOL;
-					print "Target Temperature 1: " . $targetTemperature1 . PHP_EOL;
-					print "Target Temperature 2: " . $targetTemperature2 . PHP_EOL;
-					print "Target Temperature 3: " . $targetTemperature3 . PHP_EOL;
-					print "Current Temperature 1: " . $currentTemperature1 . PHP_EOL;
-					print "Current Temperature 2: " . $currentTemperature2 . PHP_EOL;
-					print "Current Temperature 3: " . $currentTemperature3 . PHP_EOL;
-					print "Info available: " . $signalInfo . PHP_EOL;
-					print "Failure: " . $signalFailure . PHP_EOL;
-					print "Door open: " . $signalDoor . PHP_EOL;
-					print "Remote Control Enabled: " . $fullRemoteControl . PHP_EOL;
-					print "SmartGrid Enabled: " . $smartGrid . PHP_EOL;
-					print "Mobile Start Enabled: " . $mobileStart . PHP_EOL;
-					print "Ambient Light Enabled: " . $ambientLight . PHP_EOL;
-					print "Light Enabled: " . $light . PHP_EOL;
-					print "SpinningSpeed: " . $spinningSpeed . PHP_EOL;
-					print "EcoFeedbackEnabled: " . $ecoFeedback . PHP_EOL;
-					print "BatteryLevel: " . $batteryLevel . PHP_EOL;
-                                        print "Water Consumption: " . $waterconsumption . PHP_EOL;
-                                        print "Power Consumption: " . $powerconsumption . PHP_EOL;
+         		        	print json_encode($appliance, JSON_UNESCAPED_UNICODE) . PHP_EOL;
 				}
-			}
+		}
 		else {
 
 			$topicapplbase = $topicbase . $appliance_id . '/';
